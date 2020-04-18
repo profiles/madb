@@ -5,6 +5,7 @@
 namespace SharpAdbClient
 {
     using Exceptions;
+    using SharpAdbClient.Messages.Sync;
     using System;
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
@@ -203,17 +204,18 @@ namespace SharpAdbClient
 
             // read the result, in a byte array containing 2 ints
             // (id, size)
-            var result = this.Socket.ReadSyncResponse();
+            var status = new Status();
+            status.ReadFrom(this.Socket);
 
-            if (result == SyncCommand.FAIL)
+            if (status.Command == SyncCommand.FAIL)
             {
                 var message = this.Socket.ReadSyncString();
 
                 throw new AdbException(message);
             }
-            else if (result != SyncCommand.OKAY)
+            else if (status.Command != SyncCommand.OKAY)
             {
-                throw new AdbException($"The server sent an invali repsonse {result}");
+                throw new AdbException($"The server sent an invali repsonse {status.Command}");
             }
         }
 
@@ -241,43 +243,33 @@ namespace SharpAdbClient
 
             while (true)
             {
-                var response = this.Socket.ReadSyncResponse();
+                var data = new Data();
+                data.ReadFrom(this.Socket);
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (response == SyncCommand.DONE)
+                if (data.Command == SyncCommand.DONE)
                 {
                     break;
                 }
-                else if (response == SyncCommand.FAIL)
+                else if (data.Command == SyncCommand.FAIL)
                 {
                     var message = this.Socket.ReadSyncString();
                     throw new AdbException($"Failed to pull '{remoteFilepath}'. {message}");
                 }
-                else if (response != SyncCommand.DATA)
+                else if (data.Command != SyncCommand.DATA)
                 {
-                    throw new AdbException($"The server sent an invalid response {response}");
+                    throw new AdbException($"The server sent an invalid response {data.Command}");
                 }
 
-                // The first 4 bytes contain the length of the data packet
-                var reply = new byte[4];
-                this.Socket.Read(reply);
-
-                if (!BitConverter.IsLittleEndian)
+                if (data.Size > this.MaxBufferSize)
                 {
-                    Array.Reverse(reply);
-                }
-
-                int size = BitConverter.ToInt32(reply, 0);
-
-                if (size > this.MaxBufferSize)
-                {
-                    throw new AdbException($"The adb server is sending {size} bytes of data, which exceeds the maximum chunk size {this.MaxBufferSize}");
+                    throw new AdbException($"The adb server is sending {data.Size} bytes of data, which exceeds the maximum chunk size {this.MaxBufferSize}");
                 }
 
                 // now read the length we received
-                this.Socket.Read(buffer, size);
-                stream.Write(buffer, 0, size);
-                totalBytesRead += size;
+                this.Socket.Read(buffer, data.Size);
+                stream.Write(buffer, 0, data.Size);
+                totalBytesRead += data.Size;
 
                 // Let the caller know about our progress, if requested
                 if (progress != null && totalBytesToProcess != 0)
@@ -293,18 +285,16 @@ namespace SharpAdbClient
             // create the stat request message.
             this.Socket.SendSyncRequest(SyncCommand.STAT, remotePath);
 
-            if (this.Socket.ReadSyncResponse() != SyncCommand.STAT)
+            // read the result, in a byte array containing 3 ints
+            // (mode, size, time)
+            var statv2 = new Stat2();
+            statv2.ReadFrom(this.Socket);
+            if (statv2.Command != SyncCommand.STAT)
             {
                 throw new AdbException($"The server returned an invalid sync response.");
             }
-
-            // read the result, in a byte array containing 3 ints
-            // (mode, size, time)
-            FileStatistics value = new FileStatistics();
-            value.Path = remotePath;
-
-            this.ReadStatistics(value);
-
+            
+            FileStatistics value = FileStatistics.ReadFromStat2(remotePath, statv2);
             return value;
         }
 
@@ -318,21 +308,19 @@ namespace SharpAdbClient
 
             while (true)
             {
-                var response = this.Socket.ReadSyncResponse();
+                var dent = new Dent();
+                dent.ReadFrom(this.Socket);
 
-                if (response == SyncCommand.DONE)
+                if (dent.Command == SyncCommand.DONE)
                 {
                     break;
                 }
-                else if (response != SyncCommand.DENT)
+                else if (dent.Command != SyncCommand.DENT)
                 {
                     throw new AdbException($"The server returned an invalid sync response.");
                 }
 
-                FileStatistics entry = new FileStatistics();
-                this.ReadStatistics(entry);
-                entry.Path = this.Socket.ReadSyncString();
-
+                FileStatistics entry = FileStatistics.ReadFromDent(dent);
                 value.Add(entry);
             }
 
@@ -349,23 +337,6 @@ namespace SharpAdbClient
                 this.Socket.Dispose();
                 this.Socket = null;
             }
-        }
-
-        private void ReadStatistics(FileStatistics value)
-        {
-            byte[] statResult = new byte[12];
-            this.Socket.Read(statResult);
-
-            if (!BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(statResult, 0, 4);
-                Array.Reverse(statResult, 4, 4);
-                Array.Reverse(statResult, 8, 4);
-            }
-
-            value.FileMode = (UnixFileMode)BitConverter.ToInt32(statResult, 0);
-            value.Size = BitConverter.ToInt32(statResult, 4);
-            value.Time = DateTimeHelper.Epoch.AddSeconds(BitConverter.ToInt32(statResult, 8)).ToLocalTime();
         }
     }
 }

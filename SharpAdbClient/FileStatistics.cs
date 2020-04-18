@@ -5,6 +5,7 @@
 namespace SharpAdbClient
 {
     using System;
+    using SharpAdbClient.Messages.Sync;
 
     /// <summary>
     /// Contains information about a file on the remote device.
@@ -56,6 +57,28 @@ namespace SharpAdbClient
         public override string ToString()
         {
             return this.Path;
+        }
+
+        public static FileStatistics ReadFromStat2(string path, Stat2 stat2)
+        {
+            return new FileStatistics()
+            {
+                FileMode = stat2.FileMode,
+                Size = stat2.Size,
+                Time = stat2.Time,
+                Path = path,
+            };
+        }
+
+        public static FileStatistics ReadFromDent(Dent dent)
+        {
+            return new FileStatistics()
+            {
+                FileMode = dent.FileMode,
+                Size = dent.Size,
+                Time = dent.Time,
+                Path = dent.Path,
+            };
         }
     }
 }
