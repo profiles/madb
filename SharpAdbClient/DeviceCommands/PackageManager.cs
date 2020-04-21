@@ -189,13 +189,15 @@ namespace SharpAdbClient.DeviceCommands
         /// </summary>
         /// <param name="packageName">
         /// The name of the package to uninstall.
+        /// <param name="keepData">
+        /// Keep the data and cache directories around after package removal.
         /// </param>
-        public void UninstallPackage(string packageName)
+        public void UninstallPackage(string packageName, bool keepData = false)
         {
             this.ValidateDevice();
 
             InstallReceiver receiver = new InstallReceiver();
-            this.Device.ExecuteShellCommand(this.client, $"pm uninstall {packageName}", receiver);
+            this.Device.ExecuteShellCommand(this.client, $"pm uninstall {(keepData ? "-k " : "")}{packageName}", receiver);
             if (!string.IsNullOrEmpty(receiver.ErrorMessage))
             {
                 throw new PackageInstallationException(receiver.ErrorMessage);
