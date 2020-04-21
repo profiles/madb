@@ -39,7 +39,7 @@ namespace SharpAdbClient
         /// <summary>
         /// The default encoding
         /// </summary>
-        public const string DefaultEncoding = "ISO-8859-1";
+        public const string DefaultEncoding = "UTF-8";
 
         /// <summary>
         /// The port at which the Android Debug Bridge server listens by default.
@@ -149,7 +149,7 @@ namespace SharpAdbClient
         /// </returns>
         public static byte[] FormAdbRequest(string req)
         {
-            string resultStr = string.Format("{0}{1}", req.Length.ToString("X4"), req);
+            string resultStr = string.Format("{0}{1}", Encoding.GetByteCount(req).ToString("X4"), req);
             byte[] result = Encoding.GetBytes(resultStr);
             return result;
         }
